@@ -980,6 +980,83 @@ function compileProgram(applyLive){
 /* =========================
    Dibujo helpers
 ========================= */
+
+/* =========================
+   Canvas helpers (faltaban)
+========================= */
+function resizeCanvasToDisplaySize(canvas){
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const width = Math.max(1, Math.round(rect.width * dpr));
+  const height = Math.max(1, Math.round(rect.height * dpr));
+  if (canvas.width !== width || canvas.height !== height){
+    canvas.width = width;
+    canvas.height = height;
+    return true;
+  }
+  return false;
+}
+
+function drawRobotArrow(ctx, cx, cy, cell, dir){
+  const size = Math.max(2, Math.floor(cell * 0.35));
+  if (cell < 6){
+    ctx.fillStyle = "#0b0f14";
+    ctx.fillRect(cx-1, cy-1, 2, 2);
+    return;
+  }
+  ctx.save();
+  ctx.translate(cx, cy);
+  const angle = (dir === 0) ? -Math.PI/2 : (dir === 1) ? 0 : (dir === 2) ? Math.PI/2 : Math.PI;
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(size, 0);
+  ctx.lineTo(-size, -size*0.75);
+  ctx.lineTo(-size*0.6, 0);
+  ctx.lineTo(-size, size*0.75);
+  ctx.closePath();
+  ctx.fillStyle = "#0b0f14";
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawAnchorDot(ctx, cx, cy, r, yarnId){
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI*2);
+  ctx.fillStyle = yarnAnchorColor(yarnId, 0.92);
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, r * 0.18);
+  ctx.strokeStyle = yarnAnchorColor(yarnId, 1.0);
+  ctx.stroke();
+}
+
+function drawBanner(ctx, cssW, cssH, text){
+  ctx.save();
+  const pad = Math.max(12, Math.min(cssW, cssH) * 0.03);
+  const fontSize = Math.max(16, Math.min(cssW, cssH) * 0.06);
+  ctx.font = `700 ${fontSize}px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial`;
+  const metrics = ctx.measureText(text);
+  const w = metrics.width + pad*2;
+  const h = fontSize + pad*1.4;
+  const x = (cssW - w) / 2;
+  const y = (cssH - h) / 2;
+
+  const rr = Math.min(14, h/2);
+  ctx.fillStyle = "rgba(255,255,255,0.82)";
+  ctx.beginPath();
+  ctx.moveTo(x+rr, y);
+  ctx.arcTo(x+w, y, x+w, y+h, rr);
+  ctx.arcTo(x+w, y+h, x, y+h, rr);
+  ctx.arcTo(x, y+h, x, y, rr);
+  ctx.arcTo(x, y, x+w, y, rr);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(17,24,39,0.92)";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x + pad, y + h/2);
+  ctx.restore();
+}
+
 function getVisibleTopYarnAtCell(cellIndex){
   let node = state.yarnTopNode ? state.yarnTopNode[cellIndex] : -1;
   while (node !== -1){
