@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Laberinto + Robot (v1.0)</title>
+  <title>Laberinto + Robot (v2.0)</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -88,7 +88,6 @@
       font-weight:700;
       letter-spacing:.2px;
       display:flex;
-      gap:8px;
       align-items:baseline;
       line-height:1.1;
       white-space:nowrap;
@@ -183,7 +182,7 @@
       color:#d1d5db;
     }
 
-    /* Móvil: tabs + controles más grandes (solo móvil) */
+    /* Móvil: controles más grandes */
     @media (max-width: 900px){
       #mobileTabs{ display:flex; height:64px; padding:10px 12px; gap:10px; }
       #mobileTabs button{
@@ -196,11 +195,10 @@
       .panel{ min-width:0; }
       .mobileHidden{ display:none !important; }
 
-      /* Controles grandes: selects + botones */
       select, button{
         font-size:16px;
         padding:12px 14px;
-        min-height:44px; /* tamaño táctil */
+        min-height:44px;
         border-radius:12px;
       }
       .controls{ gap:10px; }
@@ -217,7 +215,6 @@
 </div>
 
 <div id="app">
-  <!-- Laberinto -->
   <div class="panel" id="mazePanel">
     <div class="panelHeader">
       <div class="titleBlock">
@@ -246,7 +243,6 @@
     </div>
   </div>
 
-  <!-- Editor -->
   <div class="panel" id="editorPanel">
     <div class="panelHeader">
       <div class="titleBlock">
@@ -267,22 +263,10 @@
 
 # ÓRDENES
 #   AVANZA
-#     - avanza por pasillos (1 ciclo por celda)
-#     - se detiene en decisión o pared
-#     - NO entra en casillas andadas (solo RECOGE puede desandar)
-#
-#   ORIENTATE
-#     - mano izquierda: izquierda -> frente -> derecha -> atrás
-#     - solo elige direcciones con casilla NO andada y sin pared
-#
-#   GIRA
-#     - gira 90º en sentido horario (siempre)
-#
+#   ORIENTATE   (mano izquierda: izq -> frente -> der -> atrás)
+#   GIRA        (90º horario)
 #   OVILLO
-#     - crea un ovillo para backtracking (pila LIFO)
-#
 #   RECOGE
-#     - desanda el rastro del último ovillo (celda a celda)
 #
 # CONDICIONALES (BIF = nº de salidas NO andadas)
 #   EN BIFURCACION <ORDEN>        # equivale a BIF>1
@@ -302,7 +286,7 @@ EN CALLEJON RECOGE
 
 <script>
 /* =========================
-   Helpers / Constantes
+   DOM refs
 ========================= */
 const N=1, E=2, S=4, W=8;
 const DIRS = [
@@ -333,6 +317,9 @@ const tabEditor = document.getElementById('tabEditor');
 const mazePanel = document.getElementById('mazePanel');
 const editorPanel = document.getElementById('editorPanel');
 
+/* =========================
+   Helpers
+========================= */
 function randInt(max){ return Math.floor(Math.random() * max); }
 function idx(x,y,w){ return x + y*w; }
 function inBounds(x,y,w,h){ return x>=0 && y>=0 && x<w && y<h; }
@@ -342,7 +329,6 @@ function wallColor(){
 function scenarioLabel(s){
   return s === "unique" ? "Única ruta" : s === "fork" ? "Una bifurcación" : "Laberinto completo";
 }
-
 function yarnHue(id){ return (id * 137) % 360; }
 function yarnTrailColor(id, alpha=0.28){
   const h = yarnHue(id);
@@ -354,7 +340,7 @@ function yarnAnchorColor(id, alpha=0.92){
 }
 
 /* =========================
-   Estado
+   State (siempre inicializado)
 ========================= */
 const state = {
   maze: null,
@@ -362,20 +348,20 @@ const state = {
   showInspector: false,
 
   robot: { x:0, y:0, dir:1, prevCell: -1 },
-  walked: null,
+  walked: new Uint8Array(0),
 
   yarnSessions: [],
   nextYarnId: 1,
   yarnAnchors: new Map(),
-  hiddenAnchorYarns: new Set(),     // yarnId oculto => NO se pinta en ninguna celda
-  yarnTopNode: null,
+  hiddenAnchorYarns: new Set(),  // yarnId oculto => NO se pinta en ninguna celda
+  yarnTopNode: null,             // Int32Array, inicializado en reset
   yarnNodeId: [],
   yarnNodePrev: [],
 
   program: [],
   ip: 0,
 
-  mode: "idle",
+  mode: "idle",                  // idle | advance | unwind | done | error
   advanceMoved: false,
   playing: false,
   steps: 0,
@@ -389,17 +375,44 @@ const state = {
   mobileView: "maze",
 };
 
-function setTickMs(ms){
-  if (state.tickMs === ms) return;
-  state.tickMs = ms;
-  if (state.playing && state.timer){
-    clearInterval(state.timer);
-    state.timer = setInterval(doOneTick, state.tickMs);
+/* =========================
+   Overlay errores (para ver en móvil sin consola)
+========================= */
+(function(){
+  const box = document.createElement('div');
+  box.style.position = 'fixed';
+  box.style.left = '12px';
+  box.style.right = '12px';
+  box.style.bottom = '12px';
+  box.style.zIndex = '9999';
+  box.style.padding = '10px 12px';
+  box.style.borderRadius = '12px';
+  box.style.background = 'rgba(248,113,113,0.12)';
+  box.style.border = '1px solid rgba(248,113,113,0.35)';
+  box.style.color = '#fee2e2';
+  box.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace';
+  box.style.fontSize = '12px';
+  box.style.display = 'none';
+  box.style.whiteSpace = 'pre-wrap';
+  box.style.maxHeight = '40vh';
+  box.style.overflow = 'auto';
+  document.body.appendChild(box);
+
+  function show(msg){
+    box.textContent = msg;
+    box.style.display = 'block';
   }
-}
+  window.addEventListener('error', (e) => {
+    show(`ERROR JS:\n${e.message}\n${e.filename || ''}:${e.lineno || ''}:${e.colno || ''}`);
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const reason = (e.reason && (e.reason.stack || e.reason.message)) ? (e.reason.stack || e.reason.message) : String(e.reason);
+    show(`PROMESA RECHAZADA:\n${reason}`);
+  });
+})();
 
 /* =========================
-   Responsive (móvil)
+   Responsive
 ========================= */
 function isMobile(){
   return window.matchMedia("(max-width: 900px)").matches;
@@ -424,23 +437,25 @@ function applyMobileView(){
     tabMaze.classList.remove("active");
   }
 }
-tabMaze.addEventListener("click", () => { state.mobileView="maze"; applyMobileView(); });
-tabEditor.addEventListener("click", () => { state.mobileView="editor"; applyMobileView(); });
+tabMaze.addEventListener("click", () => { state.mobileView="maze"; applyMobileView(); requestAnimationFrame(regenerateMaze); });
+tabEditor.addEventListener("click", () => { state.mobileView="editor"; applyMobileView(); requestAnimationFrame(regenerateMaze); });
 window.addEventListener("resize", () => { applyMobileView(); scheduleRedraw(); });
 
 /* =========================
-   Laberinto: dimensiones (móvil-friendly)
+   Maze dims (móvil-friendly + robusto)
 ========================= */
 function computeDims(size, panelW, panelH){
   const aspect = panelW / panelH;
+  const safeAspect = (Number.isFinite(aspect) && aspect > 0) ? aspect : 1;
+
   const mobile = isMobile();
   const portrait = panelH > panelW * 1.1;
 
   if (size === "small"){
     const base = mobile ? (portrait ? 7 : 8) : 10;
     let w, h;
-    if (aspect >= 1){ h = base; w = Math.max(6, Math.round(base * aspect)); }
-    else { w = base; h = Math.max(6, Math.round(base / aspect)); }
+    if (safeAspect >= 1){ h = base; w = Math.max(6, Math.round(base * safeAspect)); }
+    else { w = base; h = Math.max(6, Math.round(base / safeAspect)); }
     const maxSmall = mobile ? 26 : 40;
     return { w: Math.min(maxSmall, w), h: Math.min(maxSmall, h) };
   }
@@ -449,10 +464,10 @@ function computeDims(size, panelW, panelH){
 
   let w = Math.floor(panelW / targetCellPx);
   w = Math.max(mobile ? 18 : 25, Math.min(mobile ? 130 : 200, w));
-  let h = Math.round(w / aspect);
+  let h = Math.round(w / safeAspect);
 
   const maxH = mobile ? 130 : 200;
-  if (h > maxH){ h = maxH; w = Math.round(h * aspect); }
+  if (h > maxH){ h = maxH; w = Math.round(h * safeAspect); }
 
   h = Math.max(mobile ? 18 : 25, Math.min(maxH, h));
   w = Math.max(mobile ? 18 : 25, Math.min(mobile ? 130 : 200, w));
@@ -461,7 +476,7 @@ function computeDims(size, panelW, panelH){
 }
 
 /* =========================
-   Generación laberinto
+   Maze generation
 ========================= */
 function generatePerfectMazeConnections(w,h){
   const n = w*h;
@@ -492,7 +507,6 @@ function generatePerfectMazeConnections(w,h){
   }
   return conn;
 }
-
 function pathInTree(conn, start, goal){
   const parent = new Int32Array(conn.length);
   parent.fill(-1);
@@ -517,7 +531,6 @@ function pathInTree(conn, start, goal){
   path.reverse();
   return path;
 }
-
 function connectionsToWalls(w,h, connKeep){
   const n = w*h;
   const walls = new Uint8Array(n);
@@ -541,7 +554,6 @@ function connectionsToWalls(w,h, connKeep){
   }
   return walls;
 }
-
 function computeReachable(connKeep, start){
   const reach = new Uint8Array(connKeep.length);
   const q = [start];
@@ -556,7 +568,6 @@ function computeReachable(connKeep, start){
   }
   return reach;
 }
-
 function buildMaze(scenario, w,h){
   const start = 0;
   const goal = w*h - 1;
@@ -640,7 +651,7 @@ function buildMaze(scenario, w,h){
 }
 
 /* =========================
-   Robot + Reglas
+   Robot rules
 ========================= */
 function robotCellIndex(){ return idx(state.robot.x, state.robot.y, state.maze.w); }
 function goalIndex(){ return state.maze.w * state.maze.h - 1; }
@@ -667,12 +678,10 @@ function canMoveToDir(fromX, fromY, dir, requireNotWalked){
   if (!inBounds(nx,ny,state.maze.w,state.maze.h)) return false;
   if (requireNotWalked){
     const ni = idx(nx,ny,state.maze.w);
-    if (state.walked[ni]) return false;
+    if (state.walked && state.walked[ni]) return false;
   }
   return true;
 }
-
-// BIF = nº de salidas NO andadas
 function bifUnwalkedAt(x,y){
   let c = 0;
   for (let d=0; d<4; d++){
@@ -681,7 +690,7 @@ function bifUnwalkedAt(x,y){
     const nx = x + dx, ny = y + dy;
     if (!inBounds(nx,ny,state.maze.w,state.maze.h)) continue;
     const ni = idx(nx,ny,state.maze.w);
-    if (state.walked[ni]) continue;
+    if (state.walked && state.walked[ni]) continue;
     c++;
   }
   return c;
@@ -691,7 +700,6 @@ function bifUnwalkedAtCell(cellIndex){
   const y = Math.floor(cellIndex / state.maze.w);
   return bifUnwalkedAt(x,y);
 }
-
 function setRobotDirection(newDir){
   if (state.robot.dir !== newDir){
     state.robot.dir = newDir;
@@ -700,7 +708,6 @@ function setRobotDirection(newDir){
   }
   return false;
 }
-
 function leftHandTurn(){
   const dir = state.robot.dir;
   const order = [(dir+3)%4, dir, (dir+1)%4, (dir+2)%4];
@@ -715,16 +722,11 @@ function rotateClockwise(){
 }
 
 /* =========================
-   Ovillos
+   Yarn stack
 ========================= */
 function yarnCurrentSession(){
   if (!state.yarnSessions.length) return null;
   return state.yarnSessions[state.yarnSessions.length - 1];
-}
-function yarnTopId(cellIndex){
-  const n = state.yarnTopNode[cellIndex];
-  if (n === -1) return 0;
-  return state.yarnNodeId[n] | 0;
 }
 function yarnPush(cellIndex, yarnId){
   const top = state.yarnTopNode[cellIndex];
@@ -741,13 +743,11 @@ function yarnPopAllTop(cellIndex, yarnId){
   }
   state.yarnTopNode[cellIndex] = top;
 }
-
 function dropYarn(){
   const id = state.nextYarnId++;
   const anchor = robotCellIndex();
   const session = { id, anchor, path: [anchor] };
   state.yarnSessions.push(session);
-
   state.yarnAnchors.set(id, anchor);
   yarnPush(anchor, id);
 }
@@ -756,7 +756,6 @@ function startUnwind(){
   state.mode = "unwind";
   return true;
 }
-
 function updateClosedAnchors(){
   if (!state.yarnAnchors.size) return;
   const active = new Set(state.yarnSessions.map(s => s.id));
@@ -768,13 +767,11 @@ function updateClosedAnchors(){
     }
   }
 }
-
 function unwindOneStep(){
   const session = yarnCurrentSession();
   if (!session) return {acted:false, finished:false};
 
   const cur = robotCellIndex();
-
   if (cur === session.anchor && session.path.length === 1){
     yarnPush(cur, session.id);
     state.yarnSessions.pop();
@@ -806,7 +803,7 @@ function unwindOneStep(){
   }
 
   yarnPopAllTop(cur, session.id);
-  state.walked[cur] = 1;
+  if (state.walked) state.walked[cur] = 1;
 
   state.robot.prevCell = cur;
   state.robot.x = px;
@@ -826,7 +823,7 @@ function moveRobotForwardOneCell(){
   if (!inBounds(nx,ny,state.maze.w,state.maze.h)) return false;
 
   const ci = idx(x,y,state.maze.w);
-  state.walked[ci] = 1;
+  if (state.walked) state.walked[ci] = 1;
 
   state.robot.prevCell = ci;
   state.robot.x = nx;
@@ -844,14 +841,13 @@ function moveRobotForwardOneCell(){
 }
 
 /* =========================
-   Parser
+   Program parser
 ========================= */
 function normalizeToken(s){
   return s.trim().toUpperCase()
     .replaceAll("Á","A").replaceAll("É","E").replaceAll("Í","I").replaceAll("Ó","O").replaceAll("Ú","U")
     .replaceAll("Ñ","N");
 }
-
 function parseSingleCmd(tokens, lineNo, errors){
   if (!tokens.length) return null;
   const t = normalizeToken(tokens[0]).replaceAll(":","");
@@ -866,7 +862,6 @@ function parseSingleCmd(tokens, lineNo, errors){
   errors.push(`Línea ${lineNo}: instrucción desconocida (${tokens.join(" ")})`);
   return null;
 }
-
 function parseProgram(text){
   const lines = text.split(/\r?\n/);
   const prog = [];
@@ -894,6 +889,7 @@ function parseProgram(text){
         continue;
       }
       const first = normalizeToken(tail[0]).replaceAll(":","");
+
       if (first === "CALLEJON"){
         const sub = parseSingleCmd(tail.slice(1), lineNo, errors);
         if (!sub) continue;
@@ -956,7 +952,6 @@ function parseProgram(text){
 
   return {prog, errors};
 }
-
 function compileProgram(applyLive){
   const {prog, errors} = parseProgram(editor.value);
   if (errors.length){
@@ -978,11 +973,51 @@ function compileProgram(applyLive){
 }
 
 /* =========================
-   Dibujo helpers
+   Control functions (SIEMPRE presentes)
 ========================= */
+function pausePlaying(){
+  state.playing = false;
+  if (state.timer){
+    clearInterval(state.timer);
+    state.timer = null;
+  }
+  playBtn.classList.remove("playing");
+  playBtn.textContent = "Run";
+}
+
+function resetRobotAndMarks(){
+  pausePlaying();
+
+  state.robot.x = 0;
+  state.robot.y = 0;
+  state.robot.dir = 1;
+  state.robot.prevCell = -1;
+
+  const n = state.maze.w * state.maze.h;
+  state.walked = new Uint8Array(n);
+
+  state.yarnSessions = [];
+  state.nextYarnId = 1;
+  state.yarnAnchors = new Map();
+  state.hiddenAnchorYarns = new Set();
+
+  state.yarnTopNode = new Int32Array(n);
+  state.yarnTopNode.fill(-1);
+  state.yarnNodeId = [];
+  state.yarnNodePrev = [];
+
+  state.mode = "idle";
+  state.advanceMoved = false;
+  state.ip = 0;
+  state.steps = 0;
+
+  const ms = (n <= 1600) ? 350 : 35;
+  state.tickMs = ms;
+  state.maxSteps = Math.min(200000, Math.max(5000, n * 10));
+}
 
 /* =========================
-   Canvas helpers (faltaban)
+   Canvas drawing helpers
 ========================= */
 function resizeCanvasToDisplaySize(canvas){
   const rect = canvas.getBoundingClientRect();
@@ -996,7 +1031,6 @@ function resizeCanvasToDisplaySize(canvas){
   }
   return false;
 }
-
 function drawRobotArrow(ctx, cx, cy, cell, dir){
   const size = Math.max(2, Math.floor(cell * 0.35));
   if (cell < 6){
@@ -1018,7 +1052,6 @@ function drawRobotArrow(ctx, cx, cy, cell, dir){
   ctx.fill();
   ctx.restore();
 }
-
 function drawAnchorDot(ctx, cx, cy, r, yarnId){
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI*2);
@@ -1028,7 +1061,6 @@ function drawAnchorDot(ctx, cx, cy, r, yarnId){
   ctx.strokeStyle = yarnAnchorColor(yarnId, 1.0);
   ctx.stroke();
 }
-
 function drawBanner(ctx, cssW, cssH, text){
   ctx.save();
   const pad = Math.max(12, Math.min(cssW, cssH) * 0.03);
@@ -1057,8 +1089,12 @@ function drawBanner(ctx, cssW, cssH, text){
   ctx.restore();
 }
 
+/* =========================
+   Drawing logic
+========================= */
 function getVisibleTopYarnAtCell(cellIndex){
-  let node = state.yarnTopNode ? state.yarnTopNode[cellIndex] : -1;
+  if (!state.yarnTopNode) return 0;
+  let node = state.yarnTopNode[cellIndex];
   while (node !== -1){
     const yid = state.yarnNodeId[node] | 0;
     if (state.hiddenAnchorYarns.has(yid)){
@@ -1096,6 +1132,7 @@ function drawMaze(){
   const goal = maze.w*maze.h - 1;
   const wc = wallColor();
 
+  // no alcanzables = pared
   ctx.fillStyle = wc;
   for (let y=0; y<maze.h; y++){
     for (let x=0; x<maze.w; x++){
@@ -1105,6 +1142,7 @@ function drawMaze(){
     }
   }
 
+  // andadas + ovillos visibles
   for (let y=0; y<maze.h; y++){
     for (let x=0; x<maze.w; x++){
       const i = idx(x,y,maze.w);
@@ -1124,6 +1162,7 @@ function drawMaze(){
     }
   }
 
+  // ruta solución toggle: azul más oscuro
   if (state.showRoute && maze.path && maze.path.length){
     ctx.fillStyle = "rgba(37,99,235,0.25)";
     for (const v of maze.path){
@@ -1134,11 +1173,13 @@ function drawMaze(){
     }
   }
 
+  // entrada / salida
   ctx.fillStyle = "#c7f9cc";
   ctx.fillRect(ox, oy, cell, cell);
   ctx.fillStyle = "#ffd6a5";
   ctx.fillRect(ox + (maze.w-1)*cell, oy + (maze.h-1)*cell, cell, cell);
 
+  // paredes
   ctx.strokeStyle = wc;
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -1160,6 +1201,7 @@ function drawMaze(){
   }
   ctx.stroke();
 
+  // anclas visibles
   if (cell >= 6 && state.yarnAnchors.size){
     const r = Math.max(2, cell * 0.18);
     for (const [id, a] of state.yarnAnchors.entries()){
@@ -1178,7 +1220,7 @@ function drawMaze(){
 }
 
 /* =========================
-   Inspector / Status
+   Inspector + status
 ========================= */
 function dirName(d){ return d===0?"↑":d===1?"→":d===2?"↓":"←"; }
 function updateInspector(){
@@ -1188,7 +1230,7 @@ function updateInspector(){
   inspector.textContent =
     `pasos=${state.steps}\n` +
     `Robot: (${state.robot.x},${state.robot.y}) dir=${dirName(state.robot.dir)}\n` +
-    `Actual: ${state.walked[ci] ? "andada" : "no-andada"}\n` +
+    `Actual: ${state.walked && state.walked[ci] ? "andada" : "no-andada"}\n` +
     `BIF(no-andadas)=${bif} ${bif===0 ? "(callejon)" : ""}\n` +
     `ovillos_activos=${state.yarnSessions.map(s=>"#"+s.id).join(" ") || "(vacío)"}\n` +
     `ovillos_ocultos=${state.hiddenAnchorYarns.size}\n`;
@@ -1202,7 +1244,7 @@ function updateStatus(){
 }
 
 /* =========================
-   Motor
+   Engine
 ========================= */
 function stepEngineOnce(){
   if (state.mode === "done" || state.mode === "error") return false;
@@ -1232,6 +1274,7 @@ function stepEngineOnce(){
     }
     if (state.ip >= state.program.length) state.ip = 0;
 
+    // unwind
     if (state.mode === "unwind"){
       const {acted, finished} = unwindOneStep();
       if (acted) return true;
@@ -1240,6 +1283,7 @@ function stepEngineOnce(){
       continue;
     }
 
+    // advance mode
     if (state.mode === "advance"){
       const {dx,dy} = dirToDelta(state.robot.dir);
       const nx = state.robot.x + dx;
@@ -1249,7 +1293,7 @@ function stepEngineOnce(){
       if (!inBounds(nx,ny,state.maze.w,state.maze.h)){ state.mode="idle"; continue; }
 
       const ni = idx(nx,ny,state.maze.w);
-      if (state.walked[ni]){ state.mode="idle"; continue; }
+      if (state.walked && state.walked[ni]){ state.mode="idle"; continue; }
 
       if (!state.advanceMoved){
         const acted = moveRobotForwardOneCell();
@@ -1267,7 +1311,7 @@ function stepEngineOnce(){
       const ny2 = state.robot.y + dy2;
       if (!inBounds(nx2,ny2,state.maze.w,state.maze.h)){ state.mode="idle"; continue; }
       const ni2 = idx(nx2,ny2,state.maze.w);
-      if (state.walked[ni2]){ state.mode="idle"; continue; }
+      if (state.walked && state.walked[ni2]){ state.mode="idle"; continue; }
       if (hasWall(state.robot.x, state.robot.y, state.robot.dir)){ state.mode="idle"; continue; }
 
       const acted = moveRobotForwardOneCell();
@@ -1336,10 +1380,15 @@ function doOneTick(){
 }
 
 /* =========================
-   Eventos UI
+   Regenerate (robusto a layout 0)
 ========================= */
 function regenerateMaze(){
   const rect = mazeWrap.getBoundingClientRect();
+  if (!Number.isFinite(rect.width) || !Number.isFinite(rect.height) || rect.width < 10 || rect.height < 10){
+    requestAnimationFrame(regenerateMaze);
+    return;
+  }
+
   const {w,h} = computeDims(sizeSel.value, rect.width, rect.height);
   state.maze = buildMaze(scenarioSel.value, w, h);
   resetRobotAndMarks();
@@ -1350,6 +1399,9 @@ function regenerateMaze(){
   updateStatus();
 }
 
+/* =========================
+   UI wiring
+========================= */
 genBtn.addEventListener('click', regenerateMaze);
 scenarioSel.addEventListener('change', regenerateMaze);
 sizeSel.addEventListener('change', regenerateMaze);
@@ -1360,8 +1412,10 @@ playBtn.addEventListener('click', () => {
     state.mode = "idle";
     state.ip = 0;
   }
-  if (state.playing) pausePlaying();
-  else {
+
+  if (state.playing){
+    pausePlaying();
+  } else {
     state.playing = true;
     playBtn.classList.add("playing");
     playBtn.textContent = "Pause";
@@ -1435,7 +1489,7 @@ document.addEventListener('fullscreenchange', scheduleRedraw);
    Init
 ========================= */
 applyMobileView();
-regenerateMaze();
+requestAnimationFrame(regenerateMaze);
 </script>
 </body>
 </html>
