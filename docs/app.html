@@ -1,0 +1,1364 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Laberinto + Robot (v1.0)</title>
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --panel:#0f1621;
+      --muted:#94a3b8;
+      --text:#e5e7eb;
+      --border:#1f2a3a;
+      --btn:#1f2937;
+      --btnHover:#273449;
+      --wall:#111827;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      background: var(--bg);
+      color: var(--text);
+      overflow:hidden;
+    }
+
+    /* Tabs móviles */
+    #mobileTabs{
+      position:fixed;
+      inset:0 0 auto 0;
+      height:52px;
+      display:none;
+      gap:8px;
+      align-items:center;
+      justify-content:center;
+      padding:8px 10px;
+      border-bottom:1px solid var(--border);
+      background: rgba(15,22,33,0.95);
+      z-index:10;
+    }
+    #mobileTabs button{
+      background: var(--btn);
+      color: var(--text);
+      border:1px solid var(--border);
+      border-radius:999px;
+      padding:8px 12px;
+      font-size:13px;
+      cursor:pointer;
+    }
+    #mobileTabs button.active{
+      border-color: rgba(96,165,250,.75);
+      box-shadow: 0 0 0 1px rgba(96,165,250,.22) inset;
+    }
+
+    #app{
+      position:fixed;
+      inset:0;
+      display:flex;
+      gap:12px;
+      padding:12px;
+      min-height:0;
+      min-width:0;
+    }
+
+    .panel{
+      flex:1;
+      border:1px solid var(--border);
+      background: var(--panel);
+      border-radius:12px;
+      overflow:hidden;
+      min-width:320px;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+    }
+    .panelHeader{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:10px 12px;
+      border-bottom:1px solid var(--border);
+      gap:10px;
+      flex:0 0 auto;
+    }
+    .titleBlock{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+    .titleRow{
+      font-weight:700;
+      letter-spacing:.2px;
+      display:flex;
+      gap:8px;
+      align-items:baseline;
+      line-height:1.1;
+      white-space:nowrap;
+    }
+    .subtitle{
+      font-size:12px;
+      color:var(--muted);
+      font-weight:500;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      max-width:90ch;
+    }
+    .controls{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    select, button{
+      background: var(--btn);
+      color: var(--text);
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:8px 10px;
+      font-size:13px;
+      outline:none;
+      user-select:none;
+    }
+    button{ cursor:pointer; }
+    button:hover{ background: var(--btnHover); }
+    button.primary{
+      border-color: rgba(96,165,250,.55);
+      box-shadow: 0 0 0 1px rgba(96,165,250,.15) inset;
+    }
+    button.danger{
+      border-color: rgba(248,113,113,.55);
+      box-shadow: 0 0 0 1px rgba(248,113,113,.12) inset;
+    }
+    button.playing{
+      border-color: rgba(34,197,94,.6);
+      box-shadow: 0 0 0 1px rgba(34,197,94,.15) inset;
+    }
+    button.toggled{
+      border-color: rgba(96,165,250,.75);
+      box-shadow: 0 0 0 1px rgba(96,165,250,.22) inset;
+    }
+
+    #mazeWrap{
+      position:relative;
+      flex:1 1 auto;
+      min-height:0;
+      background:#ffffff;
+      touch-action:none;
+    }
+    #mazeCanvas{ width:100%; height:100%; display:block; }
+
+    #rightTop{
+      flex:0 0 auto;
+      border-bottom:1px solid var(--border);
+      padding:10px 12px;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    #rightTop.hidden{ display:none; }
+
+    #inspector{
+      border:1px solid var(--border);
+      border-radius:10px;
+      background: rgba(255,255,255,0.03);
+      padding:8px 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+      font-size:12px;
+      line-height:1.35;
+      white-space:pre;
+      height:190px;
+      overflow:auto;
+    }
+
+    #editor{
+      flex:1;
+      width:100%;
+      border:0;
+      outline:none;
+      resize:none;
+      padding:12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+      font-size:13px;
+      background:#0b1220;
+      color:#d1d5db;
+    }
+
+    /* Móvil: tabs + controles más grandes (solo móvil) */
+    @media (max-width: 900px){
+      #mobileTabs{ display:flex; height:64px; padding:10px 12px; gap:10px; }
+      #mobileTabs button{
+        font-size:16px;
+        padding:12px 18px;
+        min-height:44px;
+        border-radius:999px;
+      }
+      #app{ top:64px; padding:10px; gap:10px; }
+      .panel{ min-width:0; }
+      .mobileHidden{ display:none !important; }
+
+      /* Controles grandes: selects + botones */
+      select, button{
+        font-size:16px;
+        padding:12px 14px;
+        min-height:44px; /* tamaño táctil */
+        border-radius:12px;
+      }
+      .controls{ gap:10px; }
+      .panelHeader{ padding:12px; }
+      .subtitle{ font-size:13px; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="mobileTabs">
+  <button id="tabMaze" class="active">Laberinto</button>
+  <button id="tabEditor">Editor</button>
+</div>
+
+<div id="app">
+  <!-- Laberinto -->
+  <div class="panel" id="mazePanel">
+    <div class="panelHeader">
+      <div class="titleBlock">
+        <div class="titleRow">Laberinto</div>
+        <div class="subtitle" id="statusText"></div>
+      </div>
+      <div class="controls">
+        <select id="scenarioSel" title="Escenario">
+          <option value="unique">Escenario: única ruta</option>
+          <option value="fork">Escenario: una bifurcación</option>
+          <option value="full">Escenario: laberinto completo</option>
+        </select>
+        <select id="sizeSel" title="Tamaño">
+          <option value="small">Tamaño: pequeño</option>
+          <option value="large">Tamaño: grande</option>
+        </select>
+
+        <button class="primary" id="playBtn">Run</button>
+        <button id="stepBtn">Step</button>
+        <button class="danger" id="stopBtn">Stop</button>
+        <button id="genBtn">Generar</button>
+      </div>
+    </div>
+    <div id="mazeWrap" title="Click para mostrar/ocultar ruta solución">
+      <canvas id="mazeCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Editor -->
+  <div class="panel" id="editorPanel">
+    <div class="panelHeader">
+      <div class="titleBlock">
+        <div class="titleRow">Editor</div>
+        <div class="subtitle">Se ejecuta en bucle</div>
+      </div>
+      <div class="controls">
+        <button id="inspectBtn">Inspección</button>
+      </div>
+    </div>
+
+    <div id="rightTop" class="hidden">
+      <div class="subtitle">Inspector</div>
+      <div id="inspector">—</div>
+    </div>
+
+    <textarea id="editor" spellcheck="false"># Programa del robot (se ejecuta en bucle). Comentarios con #.
+
+# ÓRDENES
+#   AVANZA
+#     - avanza por pasillos (1 ciclo por celda)
+#     - se detiene en decisión o pared
+#     - NO entra en casillas andadas (solo RECOGE puede desandar)
+#
+#   ORIENTATE
+#     - mano izquierda: izquierda -> frente -> derecha -> atrás
+#     - solo elige direcciones con casilla NO andada y sin pared
+#
+#   GIRA
+#     - gira 90º en sentido horario (siempre)
+#
+#   OVILLO
+#     - crea un ovillo para backtracking (pila LIFO)
+#
+#   RECOGE
+#     - desanda el rastro del último ovillo (celda a celda)
+#
+# CONDICIONALES (BIF = nº de salidas NO andadas)
+#   EN BIFURCACION <ORDEN>        # equivale a BIF>1
+#   EN BIFURCACION=1 <ORDEN>
+#   EN BIFURCACION>1 <ORDEN>
+#   EN CALLEJON <ORDEN>           # equivale a BIF=0
+#
+# (Compatibilidad: también se aceptan SI BIF=1 / SI BIF>1 / SI CALLEJON)
+
+AVANZA
+ORIENTATE
+EN BIFURCACION OVILLO
+EN CALLEJON RECOGE
+</textarea>
+  </div>
+</div>
+
+<script>
+/* =========================
+   Helpers / Constantes
+========================= */
+const N=1, E=2, S=4, W=8;
+const DIRS = [
+  {bit:N, dx:0, dy:-1, opp:S},
+  {bit:E, dx:1, dy:0,  opp:W},
+  {bit:S, dx:0, dy:1,  opp:N},
+  {bit:W, dx:-1,dy:0,  opp:E},
+];
+
+const scenarioSel = document.getElementById('scenarioSel');
+const sizeSel = document.getElementById('sizeSel');
+const genBtn = document.getElementById('genBtn');
+const canvas = document.getElementById('mazeCanvas');
+const statusText = document.getElementById('statusText');
+const mazeWrap = document.getElementById('mazeWrap');
+
+const editor = document.getElementById('editor');
+const inspector = document.getElementById('inspector');
+const rightTop = document.getElementById('rightTop');
+const inspectBtn = document.getElementById('inspectBtn');
+
+const playBtn = document.getElementById('playBtn');
+const stepBtn = document.getElementById('stepBtn');
+const stopBtn = document.getElementById('stopBtn');
+
+const tabMaze = document.getElementById('tabMaze');
+const tabEditor = document.getElementById('tabEditor');
+const mazePanel = document.getElementById('mazePanel');
+const editorPanel = document.getElementById('editorPanel');
+
+function randInt(max){ return Math.floor(Math.random() * max); }
+function idx(x,y,w){ return x + y*w; }
+function inBounds(x,y,w,h){ return x>=0 && y>=0 && x<w && y<h; }
+function wallColor(){
+  return getComputedStyle(document.documentElement).getPropertyValue('--wall').trim() || "#111827";
+}
+function scenarioLabel(s){
+  return s === "unique" ? "Única ruta" : s === "fork" ? "Una bifurcación" : "Laberinto completo";
+}
+
+function yarnHue(id){ return (id * 137) % 360; }
+function yarnTrailColor(id, alpha=0.28){
+  const h = yarnHue(id);
+  return `hsla(${h}, 75%, 45%, ${alpha})`;
+}
+function yarnAnchorColor(id, alpha=0.92){
+  const h = yarnHue(id);
+  return `hsla(${h}, 90%, 40%, ${alpha})`;
+}
+
+/* =========================
+   Estado
+========================= */
+const state = {
+  maze: null,
+  showRoute: false,
+  showInspector: false,
+
+  robot: { x:0, y:0, dir:1, prevCell: -1 },
+  walked: null,
+
+  yarnSessions: [],
+  nextYarnId: 1,
+  yarnAnchors: new Map(),
+  hiddenAnchorYarns: new Set(),     // yarnId oculto => NO se pinta en ninguna celda
+  yarnTopNode: null,
+  yarnNodeId: [],
+  yarnNodePrev: [],
+
+  program: [],
+  ip: 0,
+
+  mode: "idle",
+  advanceMoved: false,
+  playing: false,
+  steps: 0,
+  maxSteps: 20000,
+  tickMs: 350,
+  timer: null,
+
+  compileError: "",
+  compileDebounce: null,
+
+  mobileView: "maze",
+};
+
+function setTickMs(ms){
+  if (state.tickMs === ms) return;
+  state.tickMs = ms;
+  if (state.playing && state.timer){
+    clearInterval(state.timer);
+    state.timer = setInterval(doOneTick, state.tickMs);
+  }
+}
+
+/* =========================
+   Responsive (móvil)
+========================= */
+function isMobile(){
+  return window.matchMedia("(max-width: 900px)").matches;
+}
+function applyMobileView(){
+  if (!isMobile()){
+    mazePanel.classList.remove("mobileHidden");
+    editorPanel.classList.remove("mobileHidden");
+    tabMaze.classList.remove("active");
+    tabEditor.classList.remove("active");
+    return;
+  }
+  if (state.mobileView === "maze"){
+    mazePanel.classList.remove("mobileHidden");
+    editorPanel.classList.add("mobileHidden");
+    tabMaze.classList.add("active");
+    tabEditor.classList.remove("active");
+  } else {
+    editorPanel.classList.remove("mobileHidden");
+    mazePanel.classList.add("mobileHidden");
+    tabEditor.classList.add("active");
+    tabMaze.classList.remove("active");
+  }
+}
+tabMaze.addEventListener("click", () => { state.mobileView="maze"; applyMobileView(); });
+tabEditor.addEventListener("click", () => { state.mobileView="editor"; applyMobileView(); });
+window.addEventListener("resize", () => { applyMobileView(); scheduleRedraw(); });
+
+/* =========================
+   Laberinto: dimensiones (móvil-friendly)
+========================= */
+function computeDims(size, panelW, panelH){
+  const aspect = panelW / panelH;
+  const mobile = isMobile();
+  const portrait = panelH > panelW * 1.1;
+
+  if (size === "small"){
+    const base = mobile ? (portrait ? 7 : 8) : 10;
+    let w, h;
+    if (aspect >= 1){ h = base; w = Math.max(6, Math.round(base * aspect)); }
+    else { w = base; h = Math.max(6, Math.round(base / aspect)); }
+    const maxSmall = mobile ? 26 : 40;
+    return { w: Math.min(maxSmall, w), h: Math.min(maxSmall, h) };
+  }
+
+  const targetCellPx = mobile ? (portrait ? 11 : 9) : 6;
+
+  let w = Math.floor(panelW / targetCellPx);
+  w = Math.max(mobile ? 18 : 25, Math.min(mobile ? 130 : 200, w));
+  let h = Math.round(w / aspect);
+
+  const maxH = mobile ? 130 : 200;
+  if (h > maxH){ h = maxH; w = Math.round(h * aspect); }
+
+  h = Math.max(mobile ? 18 : 25, Math.min(maxH, h));
+  w = Math.max(mobile ? 18 : 25, Math.min(mobile ? 130 : 200, w));
+
+  return {w,h};
+}
+
+/* =========================
+   Generación laberinto
+========================= */
+function generatePerfectMazeConnections(w,h){
+  const n = w*h;
+  const visited = new Uint8Array(n);
+  const conn = Array.from({length:n}, () => []);
+  const stack = [0];
+  visited[0] = 1;
+
+  while (stack.length){
+    const cur = stack[stack.length - 1];
+    const cx = cur % w;
+    const cy = Math.floor(cur / w);
+
+    const candidates = [];
+    for (const d of DIRS){
+      const nx = cx + d.dx, ny = cy + d.dy;
+      if (!inBounds(nx,ny,w,h)) continue;
+      const ni = idx(nx,ny,w);
+      if (!visited[ni]) candidates.push(ni);
+    }
+    if (!candidates.length){ stack.pop(); continue; }
+
+    const next = candidates[randInt(candidates.length)];
+    visited[next] = 1;
+    conn[cur].push(next);
+    conn[next].push(cur);
+    stack.push(next);
+  }
+  return conn;
+}
+
+function pathInTree(conn, start, goal){
+  const parent = new Int32Array(conn.length);
+  parent.fill(-1);
+  const q = [start];
+  parent[start] = start;
+
+  for (let qi=0; qi<q.length; qi++){
+    const cur = q[qi];
+    if (cur === goal) break;
+    for (const nb of conn[cur]){
+      if (parent[nb] !== -1) continue;
+      parent[nb] = cur;
+      q.push(nb);
+    }
+  }
+  if (parent[goal] === -1) return null;
+
+  const path = [];
+  let cur = goal;
+  while (cur !== start){ path.push(cur); cur = parent[cur]; }
+  path.push(start);
+  path.reverse();
+  return path;
+}
+
+function connectionsToWalls(w,h, connKeep){
+  const n = w*h;
+  const walls = new Uint8Array(n);
+  walls.fill(N|E|S|W);
+
+  for (let y=0; y<h; y++){
+    for (let x=0; x<w; x++){
+      const i = idx(x,y,w);
+      for (const nb of connKeep[i]){
+        const nx = nb % w;
+        const ny = Math.floor(nb / w);
+        const dx = nx - x;
+        const dy = ny - y;
+
+        if (dx === 1 && dy === 0){ walls[i] &= ~E; walls[nb] &= ~W; }
+        else if (dx === -1 && dy === 0){ walls[i] &= ~W; walls[nb] &= ~E; }
+        else if (dx === 0 && dy === 1){ walls[i] &= ~S; walls[nb] &= ~N; }
+        else if (dx === 0 && dy === -1){ walls[i] &= ~N; walls[nb] &= ~S; }
+      }
+    }
+  }
+  return walls;
+}
+
+function computeReachable(connKeep, start){
+  const reach = new Uint8Array(connKeep.length);
+  const q = [start];
+  reach[start] = 1;
+  for (let qi=0; qi<q.length; qi++){
+    const cur = q[qi];
+    for (const nb of connKeep[cur]){
+      if (reach[nb]) continue;
+      reach[nb] = 1;
+      q.push(nb);
+    }
+  }
+  return reach;
+}
+
+function buildMaze(scenario, w,h){
+  const start = 0;
+  const goal = w*h - 1;
+
+  const fullConn = generatePerfectMazeConnections(w,h);
+  const mainPath = pathInTree(fullConn, start, goal);
+  if (!mainPath) throw new Error("No se pudo encontrar ruta.");
+
+  const onPath = new Uint8Array(w*h);
+  for (const v of mainPath) onPath[v] = 1;
+
+  const connKeep = Array.from({length:w*h}, () => []);
+  function addEdge(a,b){ connKeep[a].push(b); connKeep[b].push(a); }
+
+  if (scenario === "full"){
+    for (let i=0; i<fullConn.length; i++){
+      for (const nb of fullConn[i]){
+        if (nb > i) addEdge(i, nb);
+      }
+    }
+  } else {
+    for (let i=0; i<mainPath.length-1; i++) addEdge(mainPath[i], mainPath[i+1]);
+
+    if (scenario === "fork"){
+      const candidates = [];
+      for (let pi = 1; pi < mainPath.length - 1; pi++){
+        const v = mainPath[pi];
+        for (const nb of fullConn[v]){
+          if (!onPath[nb]) candidates.push([v, nb]);
+        }
+      }
+
+      if (candidates.length){
+        const [branchFrom, subtreeRoot] = candidates[randInt(candidates.length)];
+
+        const parent = new Int32Array(w*h);
+        parent.fill(-1);
+        const visited = new Uint8Array(w*h);
+        const stack = [subtreeRoot];
+        parent[subtreeRoot] = branchFrom;
+        visited[subtreeRoot] = 1;
+
+        const leaves = [];
+        while (stack.length){
+          const cur = stack.pop();
+          let childCount = 0;
+
+          for (const nb of fullConn[cur]){
+            if (nb === parent[cur]) continue;
+            if (onPath[nb]) continue;
+            if (visited[nb]) continue;
+            visited[nb] = 1;
+            parent[nb] = cur;
+            stack.push(nb);
+            childCount++;
+          }
+          if (childCount === 0) leaves.push(cur);
+        }
+
+        if (leaves.length){
+          const leaf = leaves[randInt(leaves.length)];
+          addEdge(branchFrom, subtreeRoot);
+
+          let cur = leaf;
+          while (cur !== subtreeRoot){
+            const p = parent[cur];
+            addEdge(p, cur);
+            cur = p;
+          }
+        }
+      }
+    }
+  }
+
+  const walls = connectionsToWalls(w,h, connKeep);
+  walls[start] &= ~N;
+  walls[goal]  &= ~S;
+
+  const reachable = computeReachable(connKeep, start);
+  return { w, h, walls, scenario, path: mainPath, reachable };
+}
+
+/* =========================
+   Robot + Reglas
+========================= */
+function robotCellIndex(){ return idx(state.robot.x, state.robot.y, state.maze.w); }
+function goalIndex(){ return state.maze.w * state.maze.h - 1; }
+function reachedGoal(){ return robotCellIndex() === goalIndex(); }
+
+function dirToDelta(dir){
+  if (dir === 0) return {dx:0, dy:-1};
+  if (dir === 1) return {dx:1, dy:0};
+  if (dir === 2) return {dx:0, dy:1};
+  return {dx:-1, dy:0};
+}
+function hasWall(x,y,dir){
+  const i = idx(x,y,state.maze.w);
+  const mask = state.maze.walls[i];
+  if (dir === 0) return (mask & N) !== 0;
+  if (dir === 1) return (mask & E) !== 0;
+  if (dir === 2) return (mask & S) !== 0;
+  return (mask & W) !== 0;
+}
+function canMoveToDir(fromX, fromY, dir, requireNotWalked){
+  if (hasWall(fromX, fromY, dir)) return false;
+  const {dx,dy} = dirToDelta(dir);
+  const nx = fromX + dx, ny = fromY + dy;
+  if (!inBounds(nx,ny,state.maze.w,state.maze.h)) return false;
+  if (requireNotWalked){
+    const ni = idx(nx,ny,state.maze.w);
+    if (state.walked[ni]) return false;
+  }
+  return true;
+}
+
+// BIF = nº de salidas NO andadas
+function bifUnwalkedAt(x,y){
+  let c = 0;
+  for (let d=0; d<4; d++){
+    if (hasWall(x,y,d)) continue;
+    const {dx,dy} = dirToDelta(d);
+    const nx = x + dx, ny = y + dy;
+    if (!inBounds(nx,ny,state.maze.w,state.maze.h)) continue;
+    const ni = idx(nx,ny,state.maze.w);
+    if (state.walked[ni]) continue;
+    c++;
+  }
+  return c;
+}
+function bifUnwalkedAtCell(cellIndex){
+  const x = cellIndex % state.maze.w;
+  const y = Math.floor(cellIndex / state.maze.w);
+  return bifUnwalkedAt(x,y);
+}
+
+function setRobotDirection(newDir){
+  if (state.robot.dir !== newDir){
+    state.robot.dir = newDir;
+    state.steps++;
+    return true;
+  }
+  return false;
+}
+
+function leftHandTurn(){
+  const dir = state.robot.dir;
+  const order = [(dir+3)%4, dir, (dir+1)%4, (dir+2)%4];
+  for (const d of order){
+    if (canMoveToDir(state.robot.x, state.robot.y, d, true)) return d;
+  }
+  return null;
+}
+function rotateClockwise(){
+  const nd = (state.robot.dir + 1) % 4;
+  return setRobotDirection(nd);
+}
+
+/* =========================
+   Ovillos
+========================= */
+function yarnCurrentSession(){
+  if (!state.yarnSessions.length) return null;
+  return state.yarnSessions[state.yarnSessions.length - 1];
+}
+function yarnTopId(cellIndex){
+  const n = state.yarnTopNode[cellIndex];
+  if (n === -1) return 0;
+  return state.yarnNodeId[n] | 0;
+}
+function yarnPush(cellIndex, yarnId){
+  const top = state.yarnTopNode[cellIndex];
+  if (top !== -1 && state.yarnNodeId[top] === yarnId) return;
+  const node = state.yarnNodeId.length;
+  state.yarnNodeId.push(yarnId);
+  state.yarnNodePrev.push(state.yarnTopNode[cellIndex]);
+  state.yarnTopNode[cellIndex] = node;
+}
+function yarnPopAllTop(cellIndex, yarnId){
+  let top = state.yarnTopNode[cellIndex];
+  while (top !== -1 && state.yarnNodeId[top] === yarnId){
+    top = state.yarnNodePrev[top];
+  }
+  state.yarnTopNode[cellIndex] = top;
+}
+
+function dropYarn(){
+  const id = state.nextYarnId++;
+  const anchor = robotCellIndex();
+  const session = { id, anchor, path: [anchor] };
+  state.yarnSessions.push(session);
+
+  state.yarnAnchors.set(id, anchor);
+  yarnPush(anchor, id);
+}
+function startUnwind(){
+  if (!state.yarnSessions.length) return false;
+  state.mode = "unwind";
+  return true;
+}
+
+function updateClosedAnchors(){
+  if (!state.yarnAnchors.size) return;
+  const active = new Set(state.yarnSessions.map(s => s.id));
+  for (const [yid, anchor] of state.yarnAnchors.entries()){
+    if (active.has(yid)) continue;
+    if (state.hiddenAnchorYarns.has(yid)) continue;
+    if (bifUnwalkedAtCell(anchor) === 0){
+      state.hiddenAnchorYarns.add(yid);
+    }
+  }
+}
+
+function unwindOneStep(){
+  const session = yarnCurrentSession();
+  if (!session) return {acted:false, finished:false};
+
+  const cur = robotCellIndex();
+
+  if (cur === session.anchor && session.path.length === 1){
+    yarnPush(cur, session.id);
+    state.yarnSessions.pop();
+    updateClosedAnchors();
+    return {acted:false, finished:true};
+  }
+
+  const topPath = session.path[session.path.length - 1];
+  if (topPath !== cur){
+    const pos = session.path.lastIndexOf(cur);
+    if (pos <= 0) return {acted:false, finished:false};
+    session.path = session.path.slice(0, pos+1);
+  }
+  if (session.path.length < 2) return {acted:false, finished:false};
+
+  const prev = session.path[session.path.length - 2];
+  const cx = cur % state.maze.w, cy = Math.floor(cur / state.maze.w);
+  const px = prev % state.maze.w, py = Math.floor(prev / state.maze.w);
+
+  let ndir = state.robot.dir;
+  if (px === cx && py === cy - 1) ndir = 0;
+  else if (px === cx + 1 && py === cy) ndir = 1;
+  else if (px === cx && py === cy + 1) ndir = 2;
+  else if (px === cx - 1 && py === cy) ndir = 3;
+
+  if (state.robot.dir !== ndir){
+    setRobotDirection(ndir);
+    return {acted:true, finished:false};
+  }
+
+  yarnPopAllTop(cur, session.id);
+  state.walked[cur] = 1;
+
+  state.robot.prevCell = cur;
+  state.robot.x = px;
+  state.robot.y = py;
+
+  session.path.pop();
+  state.steps++;
+  return {acted:true, finished:false};
+}
+
+function moveRobotForwardOneCell(){
+  const {x,y,dir} = state.robot;
+  if (hasWall(x,y,dir)) return false;
+
+  const {dx,dy} = dirToDelta(dir);
+  const nx = x + dx, ny = y + dy;
+  if (!inBounds(nx,ny,state.maze.w,state.maze.h)) return false;
+
+  const ci = idx(x,y,state.maze.w);
+  state.walked[ci] = 1;
+
+  state.robot.prevCell = ci;
+  state.robot.x = nx;
+  state.robot.y = ny;
+
+  const session = yarnCurrentSession();
+  if (session){
+    const ni = idx(nx,ny,state.maze.w);
+    yarnPush(ni, session.id);
+    session.path.push(ni);
+  }
+
+  state.steps++;
+  return true;
+}
+
+/* =========================
+   Parser
+========================= */
+function normalizeToken(s){
+  return s.trim().toUpperCase()
+    .replaceAll("Á","A").replaceAll("É","E").replaceAll("Í","I").replaceAll("Ó","O").replaceAll("Ú","U")
+    .replaceAll("Ñ","N");
+}
+
+function parseSingleCmd(tokens, lineNo, errors){
+  if (!tokens.length) return null;
+  const t = normalizeToken(tokens[0]).replaceAll(":","");
+
+  if (t === "AVANZA") return {op:"AVANZA", line:lineNo};
+  if (t === "ORIENTATE") return {op:"ORIENTATE", line:lineNo};
+  if (t === "GIRA") return {op:"GIRA", line:lineNo};
+  if (t === "OVILLO") return {op:"OVILLO", line:lineNo};
+  if (t === "RECOGE") return {op:"RECOGE", line:lineNo};
+  if (t === "ORIENTA") return {op:"ORIENTATE", line:lineNo};
+
+  errors.push(`Línea ${lineNo}: instrucción desconocida (${tokens.join(" ")})`);
+  return null;
+}
+
+function parseProgram(text){
+  const lines = text.split(/\r?\n/);
+  const prog = [];
+  const errors = [];
+
+  for (let i=0; i<lines.length; i++){
+    const raw = lines[i].trim();
+    const lineNo = i+1;
+    if (!raw) continue;
+    if (raw.startsWith("#") || raw.startsWith("//")) continue;
+
+    const parts = raw.split(/\s+/);
+    const head = normalizeToken(parts[0]).replaceAll(":","");
+    const tail = parts.slice(1);
+
+    if (["AVANZA","ORIENTATE","GIRA","OVILLO","RECOGE"].includes(head)){
+      const cmd = parseSingleCmd([head, ...tail], lineNo, errors);
+      if (cmd) prog.push(cmd);
+      continue;
+    }
+
+    if (head === "EN"){
+      if (tail.length < 2){
+        errors.push(`Línea ${lineNo}: EN incompleto (${raw})`);
+        continue;
+      }
+      const first = normalizeToken(tail[0]).replaceAll(":","");
+      if (first === "CALLEJON"){
+        const sub = parseSingleCmd(tail.slice(1), lineNo, errors);
+        if (!sub) continue;
+        prog.push({op:"ENCALLEJON", sub, line:lineNo});
+        continue;
+      }
+
+      if (first.startsWith("BIFURCACION")){
+        let condOp = "ENBIF_MAS1";
+        let subTokens;
+
+        if (first.startsWith("BIFURCACION=")){
+          condOp = "ENBIF_1";
+          subTokens = tail.slice(1);
+        } else if (first.startsWith("BIFURCACION>")){
+          condOp = "ENBIF_MAS1";
+          subTokens = tail.slice(1);
+        } else {
+          const maybeCmp = normalizeToken(tail[1]).replaceAll(":","");
+          if (maybeCmp === "=1"){
+            condOp = "ENBIF_1";
+            subTokens = tail.slice(2);
+          } else if (maybeCmp === ">1"){
+            condOp = "ENBIF_MAS1";
+            subTokens = tail.slice(2);
+          } else {
+            condOp = "ENBIF_MAS1";
+            subTokens = tail.slice(1);
+          }
+        }
+
+        const sub = parseSingleCmd(subTokens, lineNo, errors);
+        if (!sub) continue;
+        prog.push({op:condOp, sub, line:lineNo});
+        continue;
+      }
+
+      errors.push(`Línea ${lineNo}: EN solo admite BIFURCACION o CALLEJON (${raw})`);
+      continue;
+    }
+
+    if (head === "SI"){
+      if (tail.length < 2){
+        errors.push(`Línea ${lineNo}: SI incompleto (${raw})`);
+        continue;
+      }
+      const condTok = normalizeToken(tail[0]).replaceAll(":","");
+      const sub = parseSingleCmd(tail.slice(1), lineNo, errors);
+      if (!sub) continue;
+
+      if (condTok === "CALLEJON") prog.push({op:"ENCALLEJON", sub, line:lineNo});
+      else if (condTok === "BIF=1" || condTok === "BIFURCACIONES=1") prog.push({op:"ENBIF_1", sub, line:lineNo});
+      else if (condTok === "BIF>1" || condTok === "BIFURCACIONES>1") prog.push({op:"ENBIF_MAS1", sub, line:lineNo});
+      else errors.push(`Línea ${lineNo}: condición SI no válida (${raw})`);
+      continue;
+    }
+
+    errors.push(`Línea ${lineNo}: instrucción desconocida (${raw})`);
+  }
+
+  return {prog, errors};
+}
+
+function compileProgram(applyLive){
+  const {prog, errors} = parseProgram(editor.value);
+  if (errors.length){
+    state.compileError = errors[0];
+    if (applyLive){
+      pausePlaying();
+      state.mode = "error";
+    }
+    return false;
+  }
+  state.compileError = "";
+  state.program = prog;
+
+  if (applyLive){
+    state.ip = 0;
+    state.mode = "idle";
+  }
+  return true;
+}
+
+/* =========================
+   Dibujo helpers
+========================= */
+function getVisibleTopYarnAtCell(cellIndex){
+  let node = state.yarnTopNode ? state.yarnTopNode[cellIndex] : -1;
+  while (node !== -1){
+    const yid = state.yarnNodeId[node] | 0;
+    if (state.hiddenAnchorYarns.has(yid)){
+      node = state.yarnNodePrev[node];
+      continue;
+    }
+    return yid;
+  }
+  return 0;
+}
+
+function drawMaze(){
+  const maze = state.maze;
+  if (!maze) return;
+
+  resizeCanvasToDisplaySize(canvas);
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+
+  const cssW = canvas.width / dpr;
+  const cssH = canvas.height / dpr;
+
+  ctx.clearRect(0,0,cssW,cssH);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0,0,cssW,cssH);
+
+  const cell = Math.max(1, Math.floor(Math.min(cssW / maze.w, cssH / maze.h)));
+  const usedW = cell * maze.w;
+  const usedH = cell * maze.h;
+  const ox = Math.floor((cssW - usedW) / 2);
+  const oy = Math.floor((cssH - usedH) / 2);
+
+  const start = 0;
+  const goal = maze.w*maze.h - 1;
+  const wc = wallColor();
+
+  ctx.fillStyle = wc;
+  for (let y=0; y<maze.h; y++){
+    for (let x=0; x<maze.w; x++){
+      const i = idx(x,y,maze.w);
+      if (maze.reachable[i]) continue;
+      ctx.fillRect(ox + x*cell, oy + y*cell, cell, cell);
+    }
+  }
+
+  for (let y=0; y<maze.h; y++){
+    for (let x=0; x<maze.w; x++){
+      const i = idx(x,y,maze.w);
+      if (!maze.reachable[i]) continue;
+
+      const yid = getVisibleTopYarnAtCell(i);
+      if (yid){
+        ctx.fillStyle = yarnTrailColor(yid, 0.28);
+        ctx.fillRect(ox + x*cell, oy + y*cell, cell, cell);
+        continue;
+      }
+
+      if (state.walked && state.walked[i]){
+        ctx.fillStyle = "rgba(100,116,139,0.22)";
+        ctx.fillRect(ox + x*cell, oy + y*cell, cell, cell);
+      }
+    }
+  }
+
+  if (state.showRoute && maze.path && maze.path.length){
+    ctx.fillStyle = "rgba(37,99,235,0.25)";
+    for (const v of maze.path){
+      if (v === start || v === goal) continue;
+      const x = v % maze.w;
+      const y = Math.floor(v / maze.w);
+      ctx.fillRect(ox + x*cell, oy + y*cell, cell, cell);
+    }
+  }
+
+  ctx.fillStyle = "#c7f9cc";
+  ctx.fillRect(ox, oy, cell, cell);
+  ctx.fillStyle = "#ffd6a5";
+  ctx.fillRect(ox + (maze.w-1)*cell, oy + (maze.h-1)*cell, cell, cell);
+
+  ctx.strokeStyle = wc;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let y=0; y<maze.h; y++){
+    for (let x=0; x<maze.w; x++){
+      const i = idx(x,y,maze.w);
+      const mask = maze.walls[i];
+
+      const x0 = ox + x*cell;
+      const y0 = oy + y*cell;
+      const x1 = x0 + cell;
+      const y1 = y0 + cell;
+
+      if (mask & N){ ctx.moveTo(x0, y0); ctx.lineTo(x1, y0); }
+      if (mask & W){ ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); }
+      if (y === maze.h - 1 && (mask & S)){ ctx.moveTo(x0, y1); ctx.lineTo(x1, y1); }
+      if (x === maze.w - 1 && (mask & E)){ ctx.moveTo(x1, y0); ctx.lineTo(x1, y1); }
+    }
+  }
+  ctx.stroke();
+
+  if (cell >= 6 && state.yarnAnchors.size){
+    const r = Math.max(2, cell * 0.18);
+    for (const [id, a] of state.yarnAnchors.entries()){
+      if (state.hiddenAnchorYarns.has(id)) continue;
+      const ax = a % maze.w;
+      const ay = Math.floor(a / maze.w);
+      drawAnchorDot(ctx, ox + ax*cell + cell/2, oy + ay*cell + cell/2, r, id);
+    }
+  }
+
+  drawRobotArrow(ctx, ox + state.robot.x*cell + cell/2, oy + state.robot.y*cell + cell/2, cell, state.robot.dir);
+
+  if (state.mode === "done"){
+    drawBanner(ctx, cssW, cssH, "Laberinto resuelto");
+  }
+}
+
+/* =========================
+   Inspector / Status
+========================= */
+function dirName(d){ return d===0?"↑":d===1?"→":d===2?"↓":"←"; }
+function updateInspector(){
+  if (!state.showInspector || !state.maze) return;
+  const ci = robotCellIndex();
+  const bif = bifUnwalkedAt(state.robot.x, state.robot.y);
+  inspector.textContent =
+    `pasos=${state.steps}\n` +
+    `Robot: (${state.robot.x},${state.robot.y}) dir=${dirName(state.robot.dir)}\n` +
+    `Actual: ${state.walked[ci] ? "andada" : "no-andada"}\n` +
+    `BIF(no-andadas)=${bif} ${bif===0 ? "(callejon)" : ""}\n` +
+    `ovillos_activos=${state.yarnSessions.map(s=>"#"+s.id).join(" ") || "(vacío)"}\n` +
+    `ovillos_ocultos=${state.hiddenAnchorYarns.size}\n`;
+}
+function updateStatus(){
+  if (!state.maze) return;
+  const msg = state.compileError ? ` · ${state.compileError}` : "";
+  statusText.textContent =
+    `${scenarioLabel(state.maze.scenario)} · ${state.maze.w}×${state.maze.h} · ` +
+    `ip=${state.ip}/${state.program.length} · pasos=${state.steps}/${state.maxSteps} · tick=${state.tickMs}ms${msg}`;
+}
+
+/* =========================
+   Motor
+========================= */
+function stepEngineOnce(){
+  if (state.mode === "done" || state.mode === "error") return false;
+
+  if (reachedGoal()){
+    state.mode = "done";
+    state.playing = false;
+    return false;
+  }
+  if (state.steps >= state.maxSteps){
+    state.mode = "error";
+    state.playing = false;
+    return false;
+  }
+
+  let guard = 5000;
+  while (guard-- > 0){
+    if (reachedGoal()){
+      state.mode = "done";
+      state.playing = false;
+      return false;
+    }
+    if (!state.program.length){
+      state.mode = "error";
+      state.playing = false;
+      return false;
+    }
+    if (state.ip >= state.program.length) state.ip = 0;
+
+    if (state.mode === "unwind"){
+      const {acted, finished} = unwindOneStep();
+      if (acted) return true;
+      state.mode = "idle";
+      if (finished) return false;
+      continue;
+    }
+
+    if (state.mode === "advance"){
+      const {dx,dy} = dirToDelta(state.robot.dir);
+      const nx = state.robot.x + dx;
+      const ny = state.robot.y + dy;
+
+      if (hasWall(state.robot.x, state.robot.y, state.robot.dir)){ state.mode="idle"; continue; }
+      if (!inBounds(nx,ny,state.maze.w,state.maze.h)){ state.mode="idle"; continue; }
+
+      const ni = idx(nx,ny,state.maze.w);
+      if (state.walked[ni]){ state.mode="idle"; continue; }
+
+      if (!state.advanceMoved){
+        const acted = moveRobotForwardOneCell();
+        state.advanceMoved = true;
+        if (acted) return true;
+        state.mode="idle";
+        continue;
+      }
+
+      const bif = bifUnwalkedAt(state.robot.x, state.robot.y);
+      if (bif !== 1){ state.mode="idle"; continue; }
+
+      const {dx:dx2,dy:dy2} = dirToDelta(state.robot.dir);
+      const nx2 = state.robot.x + dx2;
+      const ny2 = state.robot.y + dy2;
+      if (!inBounds(nx2,ny2,state.maze.w,state.maze.h)){ state.mode="idle"; continue; }
+      const ni2 = idx(nx2,ny2,state.maze.w);
+      if (state.walked[ni2]){ state.mode="idle"; continue; }
+      if (hasWall(state.robot.x, state.robot.y, state.robot.dir)){ state.mode="idle"; continue; }
+
+      const acted = moveRobotForwardOneCell();
+      if (acted) return true;
+      state.mode="idle";
+      continue;
+    }
+
+    const instr = state.program[state.ip];
+    const bif = bifUnwalkedAt(state.robot.x, state.robot.y);
+
+    function runSimple(cmd){
+      if (cmd.op === "OVILLO"){ dropYarn(); return false; }
+      if (cmd.op === "RECOGE"){ startUnwind(); return false; }
+      if (cmd.op === "AVANZA"){ state.mode="advance"; state.advanceMoved=false; return false; }
+      if (cmd.op === "ORIENTATE"){
+        const nd = leftHandTurn();
+        if (nd === null) return false;
+        return setRobotDirection(nd);
+      }
+      if (cmd.op === "GIRA"){
+        return rotateClockwise();
+      }
+      return false;
+    }
+
+    if (instr.op === "ENBIF_1"){
+      state.ip++;
+      if (bif !== 1) continue;
+      const acted = runSimple(instr.sub);
+      if (acted) return true;
+      continue;
+    }
+    if (instr.op === "ENBIF_MAS1"){
+      state.ip++;
+      if (bif <= 1) continue;
+      const acted = runSimple(instr.sub);
+      if (acted) return true;
+      continue;
+    }
+    if (instr.op === "ENCALLEJON"){
+      state.ip++;
+      if (bif !== 0) continue;
+      const acted = runSimple(instr.sub);
+      if (acted) return true;
+      continue;
+    }
+
+    state.ip++;
+    const acted = runSimple(instr);
+    if (acted) return true;
+  }
+
+  state.mode = "error";
+  state.playing = false;
+  return false;
+}
+
+function doOneTick(){
+  stepEngineOnce();
+  updateClosedAnchors();
+  drawMaze();
+  updateInspector();
+  updateStatus();
+  if (!state.playing) pausePlaying();
+}
+
+/* =========================
+   Eventos UI
+========================= */
+function regenerateMaze(){
+  const rect = mazeWrap.getBoundingClientRect();
+  const {w,h} = computeDims(sizeSel.value, rect.width, rect.height);
+  state.maze = buildMaze(scenarioSel.value, w, h);
+  resetRobotAndMarks();
+  compileProgram(false);
+  updateClosedAnchors();
+  drawMaze();
+  updateInspector();
+  updateStatus();
+}
+
+genBtn.addEventListener('click', regenerateMaze);
+scenarioSel.addEventListener('change', regenerateMaze);
+sizeSel.addEventListener('change', regenerateMaze);
+
+playBtn.addEventListener('click', () => {
+  compileProgram(false);
+  if (state.mode === "done" || state.mode === "error"){
+    state.mode = "idle";
+    state.ip = 0;
+  }
+  if (state.playing) pausePlaying();
+  else {
+    state.playing = true;
+    playBtn.classList.add("playing");
+    playBtn.textContent = "Pause";
+    if (state.timer) clearInterval(state.timer);
+    state.timer = setInterval(doOneTick, state.tickMs);
+  }
+  updateStatus();
+});
+
+stepBtn.addEventListener('click', () => {
+  pausePlaying();
+  compileProgram(false);
+  doOneTick();
+});
+
+stopBtn.addEventListener('click', () => {
+  resetRobotAndMarks();
+  compileProgram(false);
+  updateClosedAnchors();
+  drawMaze();
+  updateInspector();
+  updateStatus();
+});
+
+mazeWrap.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  e.preventDefault();
+  state.showRoute = !state.showRoute;
+  drawMaze();
+});
+
+function setInspector(on){
+  state.showInspector = on;
+  rightTop.classList.toggle('hidden', !on);
+  inspectBtn.classList.toggle('toggled', on);
+  if (on) updateInspector();
+}
+inspectBtn.addEventListener('click', () => setInspector(!state.showInspector));
+setInspector(false);
+
+editor.addEventListener('input', () => {
+  if (state.compileDebounce) clearTimeout(state.compileDebounce);
+  state.compileDebounce = setTimeout(() => {
+    const ok = compileProgram(true);
+    if (ok){
+      updateClosedAnchors();
+      drawMaze();
+      updateInspector();
+      updateStatus();
+    } else {
+      updateStatus();
+    }
+  }, 200);
+});
+
+let raf = 0;
+function scheduleRedraw(){
+  if (raf) return;
+  raf = requestAnimationFrame(() => {
+    raf = 0;
+    updateClosedAnchors();
+    drawMaze();
+    updateInspector();
+    updateStatus();
+  });
+}
+window.addEventListener('resize', scheduleRedraw);
+document.addEventListener('fullscreenchange', scheduleRedraw);
+
+/* =========================
+   Init
+========================= */
+applyMobileView();
+regenerateMaze();
+</script>
+</body>
+</html>

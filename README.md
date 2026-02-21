@@ -1,2 +1,7 @@
-# laberinto-robot
-Un pequeño simulador para programar un robot que tiene que salir de un laberinto con el objetivo de aprender a programar con un repertorio de instrucciones reducido
+# Laberinto + Robot (v2.0)
+
+Los archivos para GitHub Pages están en `docs/`.
+
+- `docs/index.md` contiene las instrucciones y embebe el simulador.
+- `docs/app.html` contiene el simulador.
+
